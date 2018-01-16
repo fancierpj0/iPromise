@@ -1,4 +1,6 @@
-目录 (づ￣ 3￣)づ=>
+# Promise深度学习---我のPromise/A+实现
+
+目录 (づ￣ 3￣)づ=> So,gitHub这目录啷个整
 
 [TOC]
 
@@ -34,13 +36,13 @@
 `reason` is a value that indicates why a promise was rejected.
 
 ## Promise规范要求
->[info] 判断一个东东是不是Promise，有三项主要的特征可作为参考
+> 判断一个东东是不是Promise，有三项主要的特征可作为参考
 - Promise有三种状态 `pending` 、`fulfilled`、`rejected`
 - Promise含有then方法
 - Promise含有`Promise Resolution Procedure` （promise的状态转换处理方法）。
 
 ### 2.1. Promise状态
->[success] 一个promise必须处于 pending 、fulfilled、rejected 三种状态中的其中一种
+> 一个promise必须处于 pending 、fulfilled、rejected 三种状态中的其中一种
 
 下面是一个promise最基本的使用demo，我们先有个印象。
 - 其中promise实例化的时候传入了一个函数作为参数，这个函数我们称之为 `executor` ，它能告诉我们何时将promise状态从pending转化为其余两态中的一态。
@@ -129,14 +131,15 @@ function Promise(executor){
 ```
 以上实现了2.1. ，promise的三种状态以及状态之间的改变。
 
->[info]#### executor，形参、实参、作用域链
+>#### executor，形参、实参、作用域链
+
 我们可以发现最终转换状态时通过Promise内部的两个方法resolve和reject，这个两个方法是在什么时候传入的呢？
 **一个函数的参数查找，是从调用这个函数时所处的作用域开始查找的。**
 new Promise传入的executor，是参数也是对executor函数的定义，此时executor的resolve和reject为**形参**。
 我们new Promise的时候，会执行构造函数Promise内的代码，也就是在这时executor被执行，而executor此时所处的作用域是在Promise构造函数内部，resolve和reject方法作为**实参**被传入。
 
 ### 2.2. then方法
->[success] 一个promise必须提供一个then方法来使用它将要或则说已经被赋予的 value 或则 reason，一个promise的then方法接收两个参数
+> 一个promise必须提供一个then方法来使用它将要或则说已经被赋予的 value 或则 reason，一个promise的then方法接收两个参数
 
 ```
 promise.then(onFulfilled,onRejected)
@@ -458,6 +461,13 @@ if(x instanceof Promise){
 #### 情景：当new的promise中的resolve也是一个promise，而这个promise的resolve中又是一个promise...
 此时情况同上个情景，得益于`then()`中对value的判断，它会推迟父promise状态的转变。
 如果没有这个判断和推迟，那么也可能最终得到的value是个promise对象。（这是规范允许的，但NodeJS和blubird对promise规范的实现都对父promise的状态转换进行了推迟）
+#### 情景：在一个已经转换了状态的promise中再次调用这个promise的then方法
+此时也会走then中的self.status === FULFILLED/REJECTED 的分支，再次证明需要在then中添加这两个分支并用上settimeout
+```
+p1.then((value)=>{ //执行此回调时p1状态已经改变
+    p1.then(...);
+});
+```
 #### x instanceof Promise 和 typeof x=function... 递归的区别
 instance分支下的递归 因为存在对promise状态的判断，当`resolve()`没有对value进行判断时，instance分支下的结果value最终可能为promise对象，而x.then分支下因为没有对promise状态进行判断，故不会出现value为promise对象的情况。
 ## 其余Promise方法的实现

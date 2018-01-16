@@ -1,0 +1,1094 @@
+<!DOCTYPE html><html><head><title>Promise深度学习—我のPromise/A+实现</title><meta charset='utf-8'><link href='https://dn-maxiang.qbox.me/res-min/themes/marxico.css' rel='stylesheet'><style></style></head><body><div id='preview-contents' class='note-content'>
+                        
+                    
+
+
+
+<h1 id="promise深度学习我のpromisea实现">Promise深度学习—我のPromise/A+实现</h1>
+
+<p>目录 (づ￣ 3￣)づ=&gt;</p>
+
+<div><div class="toc"><div class="toc">
+<ul>
+<li><a href="#promise深度学习我のpromisea实现">Promise深度学习—我のPromise/A+实现</a><ul>
+<li><a href="#序">序</a></li>
+<li><a href="#1promisea-术语">1.Promise/A+ 术语</a><ul>
+<li><a href="#11-promise">1.1. promise</a></li>
+<li><a href="#12-theable">1.2. theable</a></li>
+<li><a href="#13-value">1.3. value</a></li>
+<li><a href="#14-exception">1.4. exception</a></li>
+<li><a href="#15-reason">1.5. reason</a></li>
+</ul>
+</li>
+<li><a href="#promise规范要求">Promise规范要求</a><ul>
+<li><a href="#21-promise状态">2.1. Promise状态</a><ul>
+<li><a href="#211-pending状态">2.1.1. pending状态</a></li>
+<li><a href="#212-fulfilled状态">2.1.2. fulfilled状态</a></li>
+<li><a href="#213-rejected状态">2.1.3 rejected状态</a></li>
+</ul>
+</li>
+<li><a href="#21-promise实现">2.1. Promise实现</a><ul>
+<li><a href="#executor形参实参作用域链">executor，形参、实参、作用域链</a></li>
+</ul>
+</li>
+<li><a href="#22-then方法">2.2. then方法</a><ul>
+<li><a href="#221-then参数">2.2.1. then参数</a></li>
+<li><a href="#222-如果onfulfilled是一个函数">2.2.2. 如果onFulfilled是一个函数</a></li>
+<li><a href="#223-如果onrejected是一个函数">2.2.3. 如果onRejected是一个函数</a></li>
+<li><a href="#224-onfulfilled-或则-onrejected-必须在执行栈-只存在-platform-code-时才能被调用">2.2.4. onFulfilled 或则 onRejected  必须在执行栈 只存在 platform code 时才能被调用。</a></li>
+<li><a href="#225-onfulfilled-和-onrejected-必须被当做函数调用">2.2.5. onFulfilled 和 onRejected 必须被当做函数调用。</a></li>
+<li><a href="#226-同一个promise实例可以调用多次then">2.2.6. 同一个promise实例可以调用多次then</a></li>
+<li><a href="#227-then必会返回一个新的promise">2.2.7. then必会返回一个新的promise</a></li>
+</ul>
+</li>
+<li><a href="#22-promise实现">2.2. Promise实现</a><ul>
+<li><a href="#关于platform-code">关于platform code</a></li>
+<li><a href="#情景值的穿透">情景：值的穿透</a></li>
+</ul>
+</li>
+<li><a href="#23-promise状态解析方法promise-resolution-procedure">2.3. Promise状态解析方法(promise resolution procedure)</a><ul>
+<li><a href="#231-如果-promise2-和-x-是引用关系则抛出一个-typeerror-做为理由来-reject-promise2">2.3.1. 如果 promise2 和 x 是引用关系，则抛出一个 TypeError 做为理由来 reject promise2。</a></li>
+<li><a href="#232-如果-x-是一个promise-让promise2采用它的状态">2.3.2. 如果 x 是一个promise ,让promise2采用它的状态。</a></li>
+<li><a href="#233-如果-x-是一个对象或则函数">2.3.3. 如果 x 是一个对象或则函数</a></li>
+<li><a href="#234-如果-x-不是一个函数也不是一个对象则用x来fulfilledpromise2">2.3.4. 如果 x 不是一个函数也不是一个对象，则用x来fulfilledpromise2</a></li>
+</ul>
+</li>
+<li><a href="#233-promise实现">2.3.3. Promise实现</a><ul>
+<li><a href="#情景当return的是promise且该promise的resolvereject-中-也是一个promise">情景：当return的是promise且该promise的resolve/reject ()中 也是一个promise</a></li>
+<li><a href="#情景当new的promise中的resolve也是一个promise而这个promise的resolve中又是一个promise">情景：当new的promise中的resolve也是一个promise，而这个promise的resolve中又是一个promise…</a></li>
+<li><a href="#情景在一个已经转换了状态的promise中再次调用这个promise的then方法">情景：在一个已经转换了状态的promise中再次调用这个promise的then方法</a></li>
+<li><a href="#x-instanceof-promise-和-typeof-xfunction-递归的区别">x instanceof Promise 和 typeof x=function… 递归的区别</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#其余promise方法的实现">其余Promise方法的实现</a><ul>
+<li><a href="#promiseprototypecatch">Promise.prototype.catch</a></li>
+<li><a href="#promiseall">Promise.all</a></li>
+<li><a href="#promiserace">Promise.race</a></li>
+<li><a href="#promisepromisify">Promise.promisify</a></li>
+<li><a href="#promisepromisifyall">Promise.promisifyAll</a></li>
+</ul>
+</li>
+<li><a href="#测试">测试</a></li>
+<li><a href="#实现代码终板">实现代码【终板】</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+</div>
+
+<hr>
+
+<h2 id="序">序</h2>
+
+<p>本文会对Promise规范进行一个比较完整的实现，目的是为了加深对Promise各个特性的理解从而更好的应用。</p>
+
+<blockquote>
+  <p>[warning] <strong>注意</strong>：本文依据<a href="https://promisesaplus.com" target="_blank">Promises/A+</a>规范进行Promise的实现</p>
+</blockquote>
+
+
+
+<h2 id="1promisea-术语">1.Promise/A+ 术语</h2>
+
+
+
+<h3 id="11-promise">1.1. promise</h3>
+
+<blockquote>
+  <p>promise是一个对象或则函数，它的表现是依据<a href="https://promisesaplus.com" target="_blank">Promises/A+</a>这篇规范说明来定义的。</p>
+</blockquote>
+
+<p>1.1. <code>promise</code> is an object or function with a then method whose behavior conforms to this specification.</p>
+
+
+
+<h3 id="12-theable">1.2. theable</h3>
+
+<blockquote>
+  <p>thenable是一个定义了then方法的对象或则函数。</p>
+</blockquote>
+
+<p><code>thenable</code> is an object or function that defines a then method.</p>
+
+
+
+<h3 id="13-value">1.3. value</h3>
+
+<blockquote>
+  <p>value可以是任何合法的JS值，甚至包括undefined、一个thenable、一个promise。</p>
+</blockquote>
+
+<p><code>value</code> is any legal JavaScript value (including undefined, a thenable, or a promise).</p>
+
+
+
+<h3 id="14-exception">1.4. exception</h3>
+
+<blockquote>
+  <p>exception是一个用throw语句抛出的值。</p>
+</blockquote>
+
+<p><code>exception</code> is a value that is thrown using the throw statement.</p>
+
+
+
+<h3 id="15-reason">1.5. reason</h3>
+
+<blockquote>
+  <p>reason是一个为什么promise会被拒绝的理由。</p>
+</blockquote>
+
+<p><code>reason</code> is a value that indicates why a promise was rejected.</p>
+
+
+
+<h2 id="promise规范要求">Promise规范要求</h2>
+
+<blockquote>
+  <p>判断一个东东是不是Promise，有三项主要的特征可作为参考</p>
+  
+  <ul><li>Promise有三种状态 <code>pending</code> 、<code>fulfilled</code>、<code>rejected</code></li>
+  <li>Promise含有then方法</li>
+  <li>Promise含有<code>Promise Resolution Procedure</code> （promise的状态转换处理方法）。</li>
+  </ul>
+</blockquote>
+
+
+
+<h3 id="21-promise状态">2.1. Promise状态</h3>
+
+<blockquote>
+  <p>一个promise必须处于 pending 、fulfilled、rejected 三种状态中的其中一种</p>
+</blockquote>
+
+<p>下面是一个promise最基本的使用demo，我们先有个印象。</p>
+
+<ul><li>其中promise实例化的时候传入了一个函数作为参数，这个函数我们称之为 <code>executor</code> ，它能告诉我们何时将promise状态从pending转化为其余两态中的一态。</li>
+<li>而 <code>then</code> 方法是实例化对象下的一个方法，它能传入两个参数，<strong>一般</strong>是两个回调函数，对应fulfilled和rejected两个状态，当promise从pengding状态转化成其中一个状态时就会触发对应的回调函数。</li>
+</ul>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-keyword">let</span> p = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> x = <span class="hljs-built_in">Math</span>.random();
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(x);
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span> (x &gt; <span class="hljs-number">.5</span>) {
+</div><div class="hljs-line">    resolve(<span class="hljs-string">'我是你许下的诺言的那个东东'</span>);
+</div><div class="hljs-line">  } <span class="hljs-keyword">else</span> {
+</div><div class="hljs-line">    reject(<span class="hljs-string">'我是你未能实现诺言的理由'</span>);
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">});
+</div><div class="hljs-line">
+</div><div class="hljs-line">p.then(<span class="hljs-function">(<span class="hljs-params">value</span>)=&gt;</span>{ <span class="hljs-comment">//绑定成功时的回调函数</span>
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'fulfilled:'</span>,value); <span class="hljs-comment">//fulfilled:我是你许下的诺言的那个东东</span>
+</div><div class="hljs-line">},(reason)=&gt;{ <span class="hljs-comment">//绑定失败时的回调函数</span>
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'rejected:'</span>,reason); <span class="hljs-comment">//rejected:我是你未能实现诺言的理由</span>
+</div><div class="hljs-line">});
+</div></code></pre>
+
+
+
+<h4 id="211-pending状态">2.1.1. pending状态</h4>
+
+<blockquote>
+  <p>当Promise处于pending状态时，它可能转换为fulfilled或则rejected状态。</p>
+</blockquote>
+
+<p>When pending, a promise:may transition to either the fulfilled or rejected state.</p>
+
+
+
+<h4 id="212-fulfilled状态">2.1.2. fulfilled状态</h4>
+
+<blockquote>
+  <p>当Promise处于fulfilled状态时，它不再能转换为其它状态 且 它必须有一个值，这个值不能被更改。</p>
+</blockquote>
+
+<p>When fulfilled, a promise: </p>
+
+<ul><li>must not transition to any other state.</li>
+<li>must have a value, which must not change.</li>
+</ul>
+
+
+
+<h4 id="213-rejected状态">2.1.3 rejected状态</h4>
+
+<blockquote>
+  <p>当promise处于rejected时，它不再能转换为其它状态 且 它必须有一个理由，这个理由不能被更改。</p>
+</blockquote>
+
+<p>When rejected, a promise: </p>
+
+<ul><li>must not transition to any other state.</li>
+<li>must have a reason, which must not change.</li>
+</ul>
+
+<blockquote>
+  <p>[danger]<strong>注意</strong>: 当promise处于fulfilled或则rejected时，它都有一个值，这个值不能被更改，但是可以像使用常量一样在这个值下面挂载其它值。</p>
+</blockquote>
+
+<p>Here, “must not change” means immutable identity (i.e. ===), but does not imply deep immutability.</p>
+
+
+
+<h3 id="21-promise实现">2.1. Promise实现</h3>
+
+<p><strong>请先回顾一下我们在说Promise状态时候最初的那个demo</strong> <br>
+我们通过实例化Promise时传入了一个参数，这个参数是一个执行函数（executor），它能决定什么时候将Promise转换成fulfilled什么时候转换成rejected。</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs zephir"><div class="hljs-line"><span class="hljs-keyword">const</span> PENDING = <span class="hljs-string">'pending'</span>;
+</div><div class="hljs-line"><span class="hljs-keyword">const</span> FULFILLED = <span class="hljs-string">'fulfilled'</span>;
+</div><div class="hljs-line"><span class="hljs-keyword">const</span> REJECTED = <span class="hljs-string">'rejected'</span>;
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">Promise</span><span class="hljs-params">(executor)</span></span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> <span class="hljs-keyword">self</span> = this; <span class="hljs-comment">//缓存下</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">self</span>.value = undefined; <span class="hljs-comment">//用来存放value和reason,因为promise只会处于一种状态故可只用一个变量来表示。</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">self</span>.status = PENDING; <span class="hljs-comment">//将初始状态设置为pending</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">self</span>.onFulfilledCallbacks = []; <span class="hljs-comment">//用来存放所有成功的回调函数</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">self</span>.onRejectedCallbacks = []; <span class="hljs-comment">//用来存放所有失败的回调函数</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">    executor(resolve,reject); <span class="hljs-comment">//调用执行函数，将resolve和reject方法作为参数传入</span>
+</div><div class="hljs-line">  }<span class="hljs-keyword">catch</span> (e){
+</div><div class="hljs-line">    reject(e); <span class="hljs-comment">//若执行函数中存在异常直接用抛出的值来拒绝promise</span>
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">  <span class="hljs-comment">//-----------------------------------------------------------------------------------------------------------</span>
+</div><div class="hljs-line">  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolve</span><span class="hljs-params">(value)</span></span>{ <span class="hljs-comment">//此方法会随着executor传入而传入</span>
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){ <span class="hljs-comment">//确保状态只会改变一次</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.status = FULFILLED; <span class="hljs-comment">//改变状态</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.value = value; <span class="hljs-comment">//赋予一个值</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.onFulfilledCallbacks.<span class="hljs-keyword">forEach</span>(cb =&gt; cb(<span class="hljs-keyword">self</span>.value)); <span class="hljs-comment">//2.2.2. //2.2.6.</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">reject</span><span class="hljs-params">(reason)</span></span>{
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.status = REJECTED;
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.value = reason;
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.onRejectedCallbacks.<span class="hljs-keyword">forEach</span>(cb =&gt; cb(<span class="hljs-keyword">self</span>.value));
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">}
+</div><div class="hljs-line">
+</div></code></pre>
+
+<p>以上实现了2.1. ，promise的三种状态以及状态之间的改变。</p>
+
+<blockquote>
+  <h4 id="executor形参实参作用域链">executor，形参、实参、作用域链</h4>
+</blockquote>
+
+<p>我们可以发现最终转换状态时通过Promise内部的两个方法resolve和reject，这个两个方法是在什么时候传入的呢？ <br>
+<strong>一个函数的参数查找，是从调用这个函数时所处的作用域开始查找的。</strong> <br>
+new Promise传入的executor，是参数也是对executor函数的定义，此时executor的resolve和reject为<strong>形参</strong>。 <br>
+我们new Promise的时候，会执行构造函数Promise内的代码，也就是在这时executor被执行，而executor此时所处的作用域是在Promise构造函数内部，resolve和reject方法作为<strong>实参</strong>被传入。</p>
+
+
+
+<h3 id="22-then方法">2.2. then方法</h3>
+
+<blockquote>
+  <p>一个promise必须提供一个then方法来使用它将要或则说已经被赋予的 value 或则 reason，一个promise的then方法接收两个参数</p>
+</blockquote>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs mercury"><div class="hljs-line"><span class="hljs-keyword">promise</span>.<span class="hljs-built_in">then</span>(onFulfilled,onRejected)
+</div></code></pre>
+
+
+
+<h4 id="221-then参数">2.2.1. then参数</h4>
+
+<blockquote>
+  <p>then中的参数皆为可选参数，如果onFulfilled或则说onRejected不是一个函数，那么将会被忽略。</p>
+</blockquote>
+
+<p>Both onFulfilled and onRejected are optional arguments: </p>
+
+<ul><li>If onFulfilled is not a function, it must be ignored.</li>
+<li>If onRejected is not a function, it must be ignored.</li>
+</ul>
+
+
+
+<h4 id="222-如果onfulfilled是一个函数">2.2.2. 如果onFulfilled是一个函数</h4>
+
+<ul><li>如果onFulfilled是一个函数，它必须在promise状态转换为fulfilled时候就被调用，并且promise被赋予的value会成为这个函数(onFulfilled)的第一个参数。</li>
+<li>onFulfilled不能在promise状态转化为fulfilled前就调用</li>
+<li>onFulfilled函数不能重复调用</li>
+</ul>
+
+<p>原文规范详见<a href="https://promisesaplus.com" target="_blank">Promises/A+</a></p>
+
+
+
+<h4 id="223-如果onrejected是一个函数">2.2.3. 如果onRejected是一个函数</h4>
+
+<ul><li>如果onRejected是一个函数，它必须在promise状态转换为rejected时候就被调用，并且promise被赋予的reason会成为这个函数(onRejected)的第一个参数。</li>
+<li>onRejected不能在promise状态转化为rejected前就调用</li>
+<li>onRejected函数不能重复调用</li>
+</ul>
+
+
+
+<h4 id="224-onfulfilled-或则-onrejected-必须在执行栈-只存在-platform-code-时才能被调用">2.2.4. onFulfilled 或则 onRejected  必须在执行栈 只存在 <code>platform code</code> 时才能被调用。</h4>
+
+
+
+<h4 id="225-onfulfilled-和-onrejected-必须被当做函数调用">2.2.5. onFulfilled 和 onRejected 必须被当做函数调用。</h4>
+
+
+
+<h4 id="226-同一个promise实例可以调用多次then">2.2.6. 同一个promise实例可以调用多次then</h4>
+
+<ul><li>当一个promise转化为fulfilled状态，所有onFulfilled callback会按照回调函数通过then添加时的顺序而执行。</li>
+<li>当一个promise转化为rejected状态，所有onRejected callback会按照回调函数通过then添加时的顺序而执行。</li>
+</ul>
+
+<p><strong>释</strong>:then在同一个promise实例下多次调用，意味着可以在同一个promise的同一种状态下绑定多个不同的回调函数，而这些回调函数执行的顺序和它们被绑定时的顺序相同。</p>
+
+
+
+<h4 id="227-then必会返回一个新的promise">2.2.7. then必会返回一个新的promise</h4>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs ini"><div class="hljs-line"><span class="hljs-attr">promise2</span> = promise1.then(<span class="hljs-literal">on</span>Fulfilled,<span class="hljs-literal">on</span>Rejected);
+</div></code></pre>
+
+<ul><li>如果onFulfilled或onRejected回调函数中返回了一个值，假定为x，那么调用一个 promise解析方法 <code>&lt;a href="promise2,x"&gt;[Resolve]&lt;/a&gt;</code>。</li>
+<li>如果onFulfilled或者onRejected抛出了一个 <code>exception</code>(异常) <code>e</code> , <code>promise2</code> 必须以这个e作为reason来拒绝promise，使其状态改变为rejected。</li>
+<li>如果onFulfilled不是一个函数且 <code>promise1</code> 的状态为fulfilled，<code>promise2</code>必须以 <code>promise1</code>  的值来fulfilled。</li>
+<li>如果onRejected不是一个函数且 <code>promise1</code> 的状态为rejected，<code>promise2</code>必须以 <code>promise1</code>  的理由来rejected。</li>
+</ul>
+
+
+
+<h3 id="22-promise实现">2.2. Promise实现</h3>
+
+<p>2.2.提的是一个then的实现规则，而then主要作用为promise绑定回调函数，当promise转换状态时会自动调用对应的回调函数。(对应规范2.2.2-2.2.3) <br>
+<strong>其实就是发布订阅模式啦</strong></p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs zephir"><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">Promise</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">    ...
+</div><div class="hljs-line">    <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolve</span><span class="hljs-params">(value)</span></span>{ 
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{ <span class="hljs-comment">//2.2.4.</span>
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){ <span class="hljs-comment">//2.2.2.3-2.2.2.4</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.status = FULFILLED; 
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.value = value; 
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.onFulfilledCallbacks.<span class="hljs-keyword">forEach</span>(cb =&gt; cb(<span class="hljs-keyword">self</span>.value)); <span class="hljs-comment">//2.2.6.</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">reject</span><span class="hljs-params">(reason)</span></span>{
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){ <span class="hljs-comment">//2.2.3.3-2.2.3.4</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.status = REJECTED;
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.value = reason;
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.onRejectedCallbacks.<span class="hljs-keyword">forEach</span>(cb =&gt; cb(<span class="hljs-keyword">self</span>.value));
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">}
+</div><div class="hljs-line"><span class="hljs-comment">//---------------------------------------------------------------------------------------------------</span>
+</div><div class="hljs-line">Promise.prototype.then = <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-params">(onFulfilled, onRejected)</span> </span>{ <span class="hljs-comment">//2.2.1.</span>
+</div><div class="hljs-line">  <span class="hljs-comment">//2.2.7.3-2.2.7.4 //2.2.5.</span>
+</div><div class="hljs-line">  onFulfilled = typeof onFulfilled === <span class="hljs-string">'function'</span> ? onFulfilled : value =&gt; value;
+</div><div class="hljs-line">  onRejected = typeof onRejected === <span class="hljs-string">'function'</span> ? onRejected : reason =&gt; {<span class="hljs-keyword">throw</span> reason};
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> <span class="hljs-keyword">self</span> = this,
+</div><div class="hljs-line">    promise2; <span class="hljs-comment">//2.2.7.0 //声明要返回的promise2</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){
+</div><div class="hljs-line">    <span class="hljs-comment">//2.2.7.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(resolve,reject)</span></span>{
+</div><div class="hljs-line">      <span class="hljs-comment">//存储then方法绑定的回调函数 //2.2.6.</span>
+</div><div class="hljs-line">      <span class="hljs-keyword">self</span>.onFulfilledCallbacks.push((value)=&gt;{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x = onFulfilled(value);
+</div><div class="hljs-line">          resolvePromise(promise2,x,resolve,reject); <span class="hljs-comment">//2.2.7.1</span>
+</div><div class="hljs-line">        }<span class="hljs-keyword">catch</span> (e){
+</div><div class="hljs-line">          reject(e); <span class="hljs-comment">//2.2.7.2</span>
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      });
+</div><div class="hljs-line">      <span class="hljs-keyword">self</span>.onRejectedCallbacks.push((reason)=&gt;{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x= onRejected(reason);
+</div><div class="hljs-line">          resolvePromise(promise2,x,resolve,reject);
+</div><div class="hljs-line">        }<span class="hljs-keyword">catch</span> (e){
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      });
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">};
+</div></code></pre>
+
+
+
+<h4 id="关于platform-code">关于platform code</h4>
+
+<p>Here “platform code” means engine, environment, and promise implementation code. In practice, this requirement ensures that onFulfilled and onRejected execute asynchronously, after the event loop turn in which then is called, and with a fresh stack. This can be implemented with either a “macro-task” mechanism such as setTimeout or setImmediate, or with a “micro-task” mechanism such as MutationObserver or process.nextTick. Since the promise implementation is considered platform code, it may itself contain a task-scheduling queue or “trampoline” in which the handlers are called.</p>
+
+<p>上面一大段话的意思大致上就是要求 <code>onFulfilled</code> 和 <code>onRejected</code> 回调函数确保异步执行。我们可以选择用宏任务(setTimeout/setImmediate)或则微任务(process.nextTix/MutationObserver)来完成这项规范。</p>
+
+<p><strong>这里我们通过在Promise中的resolve和reject方法中套了一个setTimeout()来实现。</strong></p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs php"><div class="hljs-line"> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolve</span><span class="hljs-params">(value)</span></span>{ 
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{ <span class="hljs-comment">//2.2.4.</span>
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === PENDING){ <span class="hljs-comment">//2.2.2.3-2.2.2.4</span>
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.status = FULFILLED; 
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.value = value; 
+</div><div class="hljs-line">        <span class="hljs-keyword">self</span>.onFulfilledCallbacks.<span class="hljs-keyword">forEach</span>(cb =&gt; cb(<span class="hljs-keyword">self</span>.value)); <span class="hljs-comment">//2.2.6.</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div></code></pre>
+
+<p>这样setTimeout中的代码就会在下一个新的执行栈中执行。<strong>即使executor中的代码是同步代码也一样</strong>。</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs coffeescript"><div class="hljs-line">let p = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-params">(resolve,reject)</span>=&gt;</span>{
+</div><div class="hljs-line">  setTimeout(<span class="hljs-function"><span class="hljs-params">()</span>=&gt;</span>{
+</div><div class="hljs-line">    resolve(<span class="hljs-string">'resolve'</span>);
+</div><div class="hljs-line">  })
+</div><div class="hljs-line">});
+</div><div class="hljs-line">p.<span class="hljs-keyword">then</span>(<span class="hljs-function"><span class="hljs-params">(value)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'fulfilled:'</span>,value);
+</div><div class="hljs-line">},<span class="hljs-function"><span class="hljs-params">(reason)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'rejected:'</span>,reason);
+</div><div class="hljs-line">});
+</div><div class="hljs-line"><span class="hljs-built_in">console</span>.log(<span class="hljs-string">'----------------'</span>);
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-regexp">//</span>输出
+</div><div class="hljs-line">&gt;&gt;&gt;----------------
+</div><div class="hljs-line">&gt;&gt;&gt;fulfilled: resolve
+</div><div class="hljs-line"><span class="hljs-regexp">//</span>----------------------------------------------------------------------------------
+</div><div class="hljs-line">let p = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-params">(resolve,reject)</span>=&gt;</span>{
+</div><div class="hljs-line">    resolve(<span class="hljs-string">'resolve'</span>);
+</div><div class="hljs-line">});
+</div><div class="hljs-line">p.<span class="hljs-keyword">then</span>(<span class="hljs-function"><span class="hljs-params">(value)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'fulfilled:'</span>,value);
+</div><div class="hljs-line">},<span class="hljs-function"><span class="hljs-params">(reason)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'rejected:'</span>,reason);
+</div><div class="hljs-line">});
+</div><div class="hljs-line"><span class="hljs-built_in">console</span>.log(<span class="hljs-string">'----------------'</span>);
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-regexp">//</span>输出
+</div><div class="hljs-line">&gt;&gt;&gt;----------------
+</div><div class="hljs-line">&gt;&gt;&gt;fulfilled: resolve
+</div></code></pre>
+
+
+
+<h4 id="情景值的穿透">情景：值的穿透</h4>
+
+<p>下面的例子中本应是第一个then中的参数会穿透到第二then中作为参数。 <br>
+<strong>下面两句再集合resolvePromise方法即是穿透原因</strong></p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-built_in">Promise</span>.prototype.then = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">onFulfilled, onRejected</span>) </span>{ <span class="hljs-comment">//2.2.1.</span>
+</div><div class="hljs-line">  <span class="hljs-comment">//2.2.7.3-2.2.7.4 //2.2.5.</span>
+</div><div class="hljs-line">  onFulfilled = <span class="hljs-keyword">typeof</span> onFulfilled === <span class="hljs-string">'function'</span> ? onFulfilled : <span class="hljs-function"><span class="hljs-params">value</span> =&gt;</span> value; <span class="hljs-comment">//结合resolvePromise方法即是穿透原因</span>
+</div><div class="hljs-line">  onRejected = <span class="hljs-keyword">typeof</span> onRejected === <span class="hljs-string">'function'</span> ? onRejected : <span class="hljs-function"><span class="hljs-params">reason</span> =&gt;</span> {<span class="hljs-keyword">throw</span> reason}; <span class="hljs-comment">//继续把异常往后抛</span>
+</div><div class="hljs-line">  ...
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-comment">//-------------------------------------------------</span>
+</div><div class="hljs-line"><span class="hljs-keyword">let</span> p = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">  resolve(<span class="hljs-string">'resolve'</span>);
+</div><div class="hljs-line">});
+</div><div class="hljs-line">p.then().then(<span class="hljs-function">(<span class="hljs-params">value</span>)=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(value); <span class="hljs-comment">//会输出resolve</span>
+</div><div class="hljs-line">});
+</div></code></pre>
+
+
+
+<h3 id="23-promise状态解析方法promise-resolution-procedure">2.3. Promise状态解析方法(promise resolution procedure)</h3>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs lisp"><div class="hljs-line">let x= onRejected(<span class="hljs-name">reason</span>)<span class="hljs-comment">;</span>
+</div><div class="hljs-line">resolvePromise(<span class="hljs-name">promise2</span>,x,resolve,reject)<span class="hljs-comment">; //resolve/reject为promise2的resolve/reject</span>
+</div></code></pre>
+
+<p>Promise状态解析方法的作用是将then时返回的promise2的状态改变并赋予其vlaue/reason。</p>
+
+<ul><li>如果 <code>x</code> 是一个thenable，那么该方法将试图将以 <code>x</code> 的状态来改变 <code>promise2</code> 的状态</li>
+<li>否则就将 <code>promise2</code> 改成 <code>fulfilled</code> 状态，并且value即为 <code>x</code> 的值</li>
+</ul>
+
+
+
+<h4 id="231-如果-promise2-和-x-是引用关系则抛出一个-typeerror-做为理由来-reject-promise2">2.3.1. 如果 <code>promise2</code> 和 <code>x</code> 是引用关系，则抛出一个 <code>TypeError</code> 做为理由来 <code>reject</code> promise2。</h4>
+
+
+
+<h4 id="232-如果-x-是一个promise-让promise2采用它的状态">2.3.2. 如果 <code>x</code> 是一个promise ,让promise2采用它的状态。</h4>
+
+<ul><li>如果 <code>x</code> 处于pending，promise2 必须保持pending直到 x 转换为 fulfilled或则rejected。</li>
+<li>如果 <code>x</code> 是 <code>fulfilled</code>状态，让promise2也为fulfilled，并且让promise2的value为x的value。</li>
+<li>如果 <code>x</code> 是 <code>rejected</code>状态，让promise2也为rejected，并且让promise2的value为x的reason。</li>
+</ul>
+
+
+
+<h4 id="233-如果-x-是一个对象或则函数">2.3.3. 如果 <code>x</code> 是一个对象或则函数</h4>
+
+<ul><li>Let <code>then</code> be <code>x.then</code></li>
+<li>如果检索 <code>x.then</code> 时候抛出了一个异常<code>e</code>，那么以这个 <code>e</code>来 <code>rejecte</code>  promise2。</li>
+<li>如果 <code>then</code> 是一个函数，用<code>x</code>作为<code>this</code>，<code>resolvePromise</code>作为第一个参数，<code>rejectPromise</code>作为第二个参数来 <code>call</code>它。 <br>
+<ul>
+<li>如果<code>resolvePromise</code>被调用，<strong>循环调用</strong> <code>promise状态解析方法</code>（原本的x替换为调用resolvePromise传入的参数，假定为y）。</li>
+<li>如果<code>rejectPromise</code>被调用，则reject Promise2，reason为调用rejectPromise传入的参数</li>
+<li>如果<code>resolvePromise</code> 和 <code>rejectPromise</code> 同时被调用或则多次调用，那么第一个调用的拥有优先权，其它的会被忽略。</li>
+<li>如果调用 <code>then</code> 的时候抛出了一个异常 <code>e</code> <br>
+<ul>
+<li>如果 <code>resolvePromise</code> 或  <code>rejectPromise</code> 已经被调用，则忽略它。</li>
+<li>否则，则用这个<code>e</code>来 <code>reject</code> promise2。</li></ul></li></ul></li>
+<li>如果then不是一个函数，则用<code>x</code>来<code>fulfilled</code>promise2</li>
+</ul>
+
+
+
+<h4 id="234-如果-x-不是一个函数也不是一个对象则用x来fulfilledpromise2">2.3.4. 如果 <code>x</code> 不是一个函数也不是一个对象，则用<code>x</code>来<code>fulfilled</code>promise2</h4>
+
+
+
+<h3 id="233-promise实现">2.3.3. Promise实现</h3>
+
+<p>resolvePromise方法针对的是then绑定的回调函数中的return值进行解析，一般情况是：</p>
+
+<ul><li>当return的是普通类型的值，那么会以这个值来fulfilled promise2</li>
+<li>如果是一个promise，那么会以这个x promise的结果来fulfilled/rejected promise2</li>
+</ul>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolve</span>(<span class="hljs-params">value</span>) </span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span>(value <span class="hljs-keyword">instanceof</span> <span class="hljs-built_in">Promise</span>){ <span class="hljs-comment">//和resolvePromise有点联系的是 当then return的promise中又resolve了一个promise会先走这，会将resolve里的promise的值赋给调用resolve的promise（说法欠妥，意会即可）</span>
+</div><div class="hljs-line">      <span class="hljs-keyword">return</span> value.then(resolve,reject); <span class="hljs-comment">//这意味着如果promise1 resolve中是一个promise2，那么promise1状态的改变时间会被推迟，直到promise2状态改变调用promise2的回调时，promise1状态才会改变才会触发promise1的回调</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">...
+</div><div class="hljs-line"><span class="hljs-comment">//---------------------------------------------------------------------------------------------------------</span>
+</div><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolvePromise</span>(<span class="hljs-params">promise2,x,resolve,reject</span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span>(x === promise2){ <span class="hljs-comment">//2.3.1.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> reject(<span class="hljs-keyword">new</span> <span class="hljs-built_in">TypeError</span>(<span class="hljs-string">'禁止循环引用!'</span>));
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> called =<span class="hljs-literal">false</span>;
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-comment">//2.3.2.</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span>(x <span class="hljs-keyword">instanceof</span> <span class="hljs-built_in">Promise</span>){
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span>(x.status === PENDING){ <span class="hljs-comment">//2.3.2.1</span>
+</div><div class="hljs-line">      x.then(<span class="hljs-function">(<span class="hljs-params">y</span>)=&gt;</span>{
+</div><div class="hljs-line">        resolvePromise(promise2,y,resolve,reject); <span class="hljs-comment">//因为此时的y，有可能也是一个promise //挂上一个钩子只要x状态转化为成功态就递归调用resolvePromise</span>
+</div><div class="hljs-line">      },reject);
+</div><div class="hljs-line">    }<span class="hljs-keyword">else</span>{ <span class="hljs-comment">//此分支存在的意义在于若executor调用resolve/reject不是异步的且不在resolve/reject中设置setTimeout，意味着当new的时候就会返回一个带状态的promise就会走这里。</span>
+</div><div class="hljs-line">      x.then(resolve,reject); <span class="hljs-comment">//2.3.2.2-2.3.2.3 //只要x状态改变，就以x的状态和值来改变promise2的状态和值 //这个值可能是一个promise，前提是在上面那种假设实现中 //如果不符合上面那种实现且不想像规范一样允许值可以为一个promise或则对象 可除去此分支</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  }<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span>(x!=<span class="hljs-literal">null</span>&amp;&amp;((<span class="hljs-keyword">typeof</span> x === <span class="hljs-string">'function'</span>)||(<span class="hljs-keyword">typeof</span> x === <span class="hljs-string">'object'</span>))){ <span class="hljs-comment">//2.3.3.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">let</span> then = x.then; <span class="hljs-comment">//2.3.3.1</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(<span class="hljs-keyword">typeof</span> then === <span class="hljs-string">'function'</span>){
+</div><div class="hljs-line">        <span class="hljs-comment">//2.3.3.3.</span>
+</div><div class="hljs-line">        then.call(x,(y)=&gt;{
+</div><div class="hljs-line">          <span class="hljs-keyword">if</span>(called) <span class="hljs-keyword">return</span>; <span class="hljs-comment">//2.3.3.3.3.</span>
+</div><div class="hljs-line">          called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">          resolvePromise(promise2,y,resolve,reject); <span class="hljs-comment">//在resolve中又包含promise的情况下，由于resolve中的 value.then存在，当前回调调用时，resolve中的promise状态一定已经改变，在状态已经改变的时候利用then绑定回调，会走then中的status==fulfilled或则rejected分支</span>
+</div><div class="hljs-line">        },(reason)=&gt;{
+</div><div class="hljs-line">          <span class="hljs-keyword">if</span>(called) <span class="hljs-keyword">return</span>;
+</div><div class="hljs-line">          called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">          reject(reason);
+</div><div class="hljs-line">        });
+</div><div class="hljs-line">      }<span class="hljs-keyword">else</span>{
+</div><div class="hljs-line">        resolve(x); <span class="hljs-comment">//2.3.3.4. //1.3</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    }<span class="hljs-keyword">catch</span> (e){
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(called) <span class="hljs-keyword">return</span>; <span class="hljs-comment">//2.3.3.3.4.1.</span>
+</div><div class="hljs-line">      called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">      reject(e); <span class="hljs-comment">//2.3.3.2. //2.3.3.3.4.2.</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">
+</div><div class="hljs-line">  }<span class="hljs-keyword">else</span>{ <span class="hljs-comment">//2.3.4.</span>
+</div><div class="hljs-line">    resolve(x);
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h4 id="情景当return的是promise且该promise的resolvereject-中-也是一个promise">情景：当return的是promise且该promise的resolve/reject ()中 也是一个promise</h4>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs coffeescript"><div class="hljs-line">let p = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-params">(resolve,reject)</span>=&gt;</span>{
+</div><div class="hljs-line">  resolve(<span class="hljs-string">'resolve1'</span>);
+</div><div class="hljs-line">});
+</div><div class="hljs-line">p.<span class="hljs-keyword">then</span>(<span class="hljs-function"><span class="hljs-params">(value)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-params">(resolve,reject)</span>=&gt;</span>{
+</div><div class="hljs-line">    resolve(<span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-params">(resolve,reject)</span>=&gt;</span>{
+</div><div class="hljs-line">      setTimeout(<span class="hljs-function"><span class="hljs-params">()</span>=&gt;</span>{
+</div><div class="hljs-line">        resolve(<span class="hljs-string">'别怂'</span>)
+</div><div class="hljs-line">      });
+</div><div class="hljs-line">    }));
+</div><div class="hljs-line">  });
+</div><div class="hljs-line">}).<span class="hljs-keyword">then</span>(<span class="hljs-function"><span class="hljs-params">(value)</span>=&gt;</span>{
+</div><div class="hljs-line">  <span class="hljs-built_in">console</span>.log(value); <span class="hljs-regexp">//</span>别怂
+</div><div class="hljs-line">});
+</div><div class="hljs-line"><span class="hljs-built_in">console</span>.log(<span class="hljs-string">'----------------'</span>);
+</div></code></pre>
+
+<p>可见最终的value值为最里层的value值，这样的实现关键在于递归调用resolvePromise。</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs fortran"><div class="hljs-line">...
+</div><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span></span> resolve(<span class="hljs-keyword">value</span>) {
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span>(<span class="hljs-keyword">value</span> instanceof Promise){ 
+</div><div class="hljs-line">      <span class="hljs-keyword">return</span> <span class="hljs-keyword">value</span>.<span class="hljs-keyword">then</span>(resolve,reject);
+</div><div class="hljs-line">...
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-keyword">if</span>(x instanceof Promise){
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span>(x.<span class="hljs-keyword">status</span> === PENDING){ //<span class="hljs-number">2.3.</span><span class="hljs-number">2.1</span>
+</div><div class="hljs-line">      x.<span class="hljs-keyword">then</span>((y)=&gt;{
+</div><div class="hljs-line">        resolvePromise(promise2,y,resolve,reject); 
+</div><div class="hljs-line">      },reject);
+</div><div class="hljs-line">    }<span class="hljs-keyword">else</span>{
+</div><div class="hljs-line">      x.<span class="hljs-keyword">then</span>(resolve,reject); 
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">
+</div></code></pre>
+
+<p>以上这段代码，当promise1执行回调的时候，会将x传入resolvePromise执行，此时由于resolve()方法中的setTimeout，该x是pending状态进pending分支，该分支会为X挂上一个钩子，当它状态转换后会再次调用resolvePromise。</p>
+
+<ul><li>如果x的resolve中传入的也是一个promise （y），由于resolve中添加的value.then，它会推迟x的状态转换，这意味着X状态转换时，y的状态一定已经转换，于是会走下面那个分支，调用y.then，<strong>而因为y的状态已经转换，在then方法中此时就不再能通过状态改变时触发回调函数</strong>，故要支持此功能需要在then中添加<code>self.status===FULFILLED/REJECTED</code>分支。</li>
+</ul>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs zephir"><div class="hljs-line">}<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span>(<span class="hljs-keyword">self</span>.status === FULFILLED){
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(resolve,reject)</span></span>{
+</div><div class="hljs-line">      setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x =onFulfilled(<span class="hljs-keyword">self</span>.value);
+</div><div class="hljs-line">          resolvePromise(promise2,x,resolve,reject);
+</div><div class="hljs-line">        }<span class="hljs-keyword">catch</span>(e){
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      })
+</div><div class="hljs-line">
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  }<span class="hljs-keyword">else</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> Promise(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(resolve,reject)</span></span>{
+</div><div class="hljs-line">      setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">()</span></span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span>{
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x =onRejected(<span class="hljs-keyword">self</span>.value);
+</div><div class="hljs-line">          resolvePromise(promise2,x,resolve,reject);
+</div><div class="hljs-line">        }<span class="hljs-keyword">catch</span>(e){
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      })
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  }
+</div></code></pre>
+
+<p>这里用了setTimeout是为了确保回调函数会异步执行。（针对2.2.4.）</p>
+
+<ul><li>如果x的resolve传入的只是一个普通的值。。。呵呵哒，那就直接resolve(x)咯</li>
+</ul>
+
+<blockquote>
+  <p>[warning] <strong>值得注意的是</strong>: 如果没有在 <code>resolve()</code> 方法中对value进行判断，那么此时嵌套promise中再嵌套一层promise输出结果会是一个promise。因为第二个promise不会等第三个promise状态转换后才转换状态，这意味着第二个promise的值就为第三个promise对象。</p>
+</blockquote>
+
+
+
+<h4 id="情景当new的promise中的resolve也是一个promise而这个promise的resolve中又是一个promise">情景：当new的promise中的resolve也是一个promise，而这个promise的resolve中又是一个promise…</h4>
+
+<p>此时情况同上个情景，得益于<code>then()</code>中对value的判断，它会推迟父promise状态的转变。 <br>
+如果没有这个判断和推迟，那么也可能最终得到的value是个promise对象。（这是规范允许的，但NodeJS和blubird对promise规范的实现都对父promise的状态转换进行了推迟）</p>
+
+
+
+<h4 id="情景在一个已经转换了状态的promise中再次调用这个promise的then方法">情景：在一个已经转换了状态的promise中再次调用这个promise的then方法</h4>
+
+<p>此时也会走then中的self.status === FULFILLED/REJECTED 的分支，再次证明需要在then中添加这两个分支并用上settimeout</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs coffeescript"><div class="hljs-line">p1.<span class="hljs-keyword">then</span>(<span class="hljs-function"><span class="hljs-params">(value)</span>=&gt;</span>{ <span class="hljs-regexp">//</span>执行此回调时p1状态已经改变
+</div><div class="hljs-line">    p1.<span class="hljs-keyword">then</span>(...);
+</div><div class="hljs-line">});
+</div></code></pre>
+
+
+
+<h4 id="x-instanceof-promise-和-typeof-xfunction-递归的区别">x instanceof Promise 和 typeof x=function… 递归的区别</h4>
+
+<p>instance分支下的递归 因为存在对promise状态的判断，当<code>resolve()</code>没有对value进行判断时，instance分支下的结果value最终可能为promise对象，而x.then分支下因为没有对promise状态进行判断，故不会出现value为promise对象的情况。</p>
+
+
+
+<h2 id="其余promise方法的实现">其余Promise方法的实现</h2>
+
+
+
+<h3 id="promiseprototypecatch">Promise.prototype.catch</h3>
+
+<p>此方法实现灰常简单，只需在最后一个then绑定完回调后再绑定一个错误的回调即可</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs actionscript"><div class="hljs-line">promise.prototype.catch = <span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(onRejected)</span></span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">this</span>.then(<span class="hljs-literal">null</span>,onRejected);
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h3 id="promiseall">Promise.all</h3>
+
+<p>此方法传入一组promise实例再返回一个最终的promise实例，当所有promise都转为fulfilled时返回的最终的promise实例将会转换为fulfilled，此时这个promise的值为传入的promise的值的集合。而如果传入的那组promise中有一个rejected，返回的promise就会rejected。</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-built_in">Promise</span>.all = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">promises</span>)</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">let</span> result = [],
+</div><div class="hljs-line">            count = <span class="hljs-number">0</span>;
+</div><div class="hljs-line">
+</div><div class="hljs-line">        <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">done</span>(<span class="hljs-params">i,data</span>)</span>{
+</div><div class="hljs-line">            result[i] = data;
+</div><div class="hljs-line">            <span class="hljs-keyword">if</span>(++count===promises.length){
+</div><div class="hljs-line">                resolve(result);
+</div><div class="hljs-line">            }
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">        <span class="hljs-keyword">for</span>(<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>;i&lt;promises.length;++i){
+</div><div class="hljs-line">            promises[i].then(<span class="hljs-function">(<span class="hljs-params">value</span>)=&gt;</span>{
+</div><div class="hljs-line">                done(i,value);
+</div><div class="hljs-line">            },(reason)=&gt;{
+</div><div class="hljs-line">                reject(reason);
+</div><div class="hljs-line">            });
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h3 id="promiserace">Promise.race</h3>
+
+<p>也是传入一组promise返回一个promise，哪个promise先转换状态，就返回这个promise的结果</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-built_in">Promise</span>.race = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">promises</span>)</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">for</span>(<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>;i&lt;promises.length;++){
+</div><div class="hljs-line">            promises[i].then(resolve,reject);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h3 id="promisepromisify">Promise.promisify</h3>
+
+<p>将一个异步函数promise化，使其可以then，可以链式书写</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs actionscript"><div class="hljs-line">Promise.promisify = <span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(fn)</span></span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> <span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(<span class="hljs-rest_arg">...args</span>)</span></span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> Promise((resolve,reject)=&gt;{
+</div><div class="hljs-line">            fn.apply(<span class="hljs-literal">null</span>,[...args,<span class="hljs-function"><span class="hljs-keyword">function</span><span class="hljs-params">(err,data)</span></span>{
+</div><div class="hljs-line">                err?reject(err):resolve(data);
+</div><div class="hljs-line">            }]);
+</div><div class="hljs-line">        });
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h3 id="promisepromisifyall">Promise.promisifyAll</h3>
+
+<p>将一个对象下的所有方法都promisify化</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-built_in">Promise</span>.promisifyAll = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">obj</span>)</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">for</span>(<span class="hljs-keyword">var</span> attr <span class="hljs-keyword">in</span> obj){
+</div><div class="hljs-line">        <span class="hljs-keyword">if</span>(obj.hasOwnProperty(key)&amp;&amp;<span class="hljs-keyword">typeof</span> obj[attr]===<span class="hljs-string">'function'</span>){
+</div><div class="hljs-line">            obj[attr+<span class="hljs-string">'Async'</span>] = <span class="hljs-built_in">Promise</span>.promisify(obj[attr]);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">}
+</div></code></pre>
+
+
+
+<h2 id="测试">测试</h2>
+
+<p>要对实现的Promise进行测试，除了实现t规范要求then方法和catch方法外还需要先在你的promise下添加一个方法</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-built_in">Promise</span>.deferred = <span class="hljs-built_in">Promise</span>.defer = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params"></span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> defer = {};
+</div><div class="hljs-line">  defer.promise = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">resolve,reject</span>)</span>{
+</div><div class="hljs-line">    defer.resolve = resolve;
+</div><div class="hljs-line">    defer.reject = reject;
+</div><div class="hljs-line">  });
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> defer;
+</div><div class="hljs-line">}
+</div></code></pre>
+
+<p>然后按下述进行测试</p>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs stylus"><div class="hljs-line">npm <span class="hljs-selector-tag">i</span> -g promises-aplus-tests
+</div><div class="hljs-line">promises-aplus-tests yourFileName.js
+</div></code></pre>
+
+
+
+<h2 id="实现代码终板">实现代码【终板】</h2>
+
+
+
+<pre class="prettyprint hljs-dark"><code class="hljs javascript"><div class="hljs-line"><span class="hljs-keyword">const</span> PENDING = <span class="hljs-string">'pending'</span>;
+</div><div class="hljs-line"><span class="hljs-keyword">const</span> FULFILLED = <span class="hljs-string">'fulfilled'</span>;
+</div><div class="hljs-line"><span class="hljs-keyword">const</span> REJECTED = <span class="hljs-string">'rejected'</span>;
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">Promise</span>(<span class="hljs-params">executor</span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> self = <span class="hljs-keyword">this</span>; <span class="hljs-comment">//缓存下</span>
+</div><div class="hljs-line">  self.value = <span class="hljs-literal">undefined</span>; <span class="hljs-comment">//用来存放value和reason,因为promise只会处于一种状态故可只用一个变量来表示。</span>
+</div><div class="hljs-line">  self.status = PENDING; <span class="hljs-comment">//将初始状态设置为pending</span>
+</div><div class="hljs-line">  self.onFulfilledCallbacks = []; <span class="hljs-comment">//用来存放所有成功的回调函数</span>
+</div><div class="hljs-line">  self.onRejectedCallbacks = []; <span class="hljs-comment">//用来存放所有失败的回调函数</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">    executor(resolve, reject); <span class="hljs-comment">//调用执行函数，将resolve和reject方法作为参数传入</span>
+</div><div class="hljs-line">  } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">    reject(e); <span class="hljs-comment">//若执行函数中存在异常直接用抛出的值来拒绝promise</span>
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolve</span>(<span class="hljs-params">value</span>) </span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span> (value <span class="hljs-keyword">instanceof</span> <span class="hljs-built_in">Promise</span>) { <span class="hljs-comment">//和resolvePromise有点联系的是 当then return的promise中又resolve了一个promise会先走这，会将resolve里的promise的值赋给调用resolve的promise（说法欠妥，意会即可）</span>
+</div><div class="hljs-line">      <span class="hljs-keyword">return</span> value.then(resolve, reject); <span class="hljs-comment">//这意味着如果promise1 resolve中是一个promise2，那么promise1状态的改变时间会被推迟，直到promise2状态改变调用promise2的回调时，promise1状态才会改变才会触发promise1的回调</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span> (self.status === PENDING) {
+</div><div class="hljs-line">        self.status = FULFILLED;
+</div><div class="hljs-line">        self.value = value;
+</div><div class="hljs-line">        self.onFulfilledCallbacks.forEach(<span class="hljs-function"><span class="hljs-params">cb</span> =&gt;</span> cb(self.value)); <span class="hljs-comment">//2.2.2. //2.2.6.</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">reject</span>(<span class="hljs-params">reason</span>) </span>{
+</div><div class="hljs-line">    setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span> (self.status === PENDING) {
+</div><div class="hljs-line">        self.status = REJECTED;
+</div><div class="hljs-line">        self.value = reason;
+</div><div class="hljs-line">        self.onRejectedCallbacks.forEach(<span class="hljs-function"><span class="hljs-params">cb</span> =&gt;</span> cb(self.value)); <span class="hljs-comment">//2.2.3. //2.2.6.</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    })
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">}
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.prototype.then = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">onFulfilled, onRejected</span>) </span>{ <span class="hljs-comment">//2.2.1.</span>
+</div><div class="hljs-line">  <span class="hljs-comment">//2.2.7.3-2.2.7.4 //2.2.5.</span>
+</div><div class="hljs-line">  onFulfilled = <span class="hljs-keyword">typeof</span> onFulfilled === <span class="hljs-string">'function'</span> ? onFulfilled : <span class="hljs-function"><span class="hljs-params">value</span> =&gt;</span> value;
+</div><div class="hljs-line">  onRejected = <span class="hljs-keyword">typeof</span> onRejected === <span class="hljs-string">'function'</span> ? onRejected : <span class="hljs-function"><span class="hljs-params">reason</span> =&gt;</span> {
+</div><div class="hljs-line">    <span class="hljs-keyword">throw</span> reason
+</div><div class="hljs-line">  };
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> self = <span class="hljs-keyword">this</span>,
+</div><div class="hljs-line">    promise2; <span class="hljs-comment">//2.2.7.0 //声明要返回的promise2</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span> (self.status === PENDING) {
+</div><div class="hljs-line">    <span class="hljs-comment">//2.2.7.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">resolve, reject</span>) </span>{
+</div><div class="hljs-line">      <span class="hljs-comment">//存储then方法绑定的回调函数 //2.2.6.</span>
+</div><div class="hljs-line">      self.onFulfilledCallbacks.push(<span class="hljs-function">(<span class="hljs-params">value</span>) =&gt;</span> {
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x = onFulfilled(value);
+</div><div class="hljs-line">          resolvePromise(promise2, x, resolve, reject); <span class="hljs-comment">//2.2.7.1 //resolve/reject属于promise2 //若此方法执行说明promise1状态已经更改</span>
+</div><div class="hljs-line">        } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">          reject(e); <span class="hljs-comment">//2.2.7.2</span>
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      });
+</div><div class="hljs-line">      self.onRejectedCallbacks.push(<span class="hljs-function">(<span class="hljs-params">reason</span>) =&gt;</span> {
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x = onRejected(reason);
+</div><div class="hljs-line">          resolvePromise(promise2, x, resolve, reject);
+</div><div class="hljs-line">        } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      });
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (self.status === FULFILLED) {
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">resolve, reject</span>) </span>{
+</div><div class="hljs-line">      setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x = onFulfilled(self.value);
+</div><div class="hljs-line">          resolvePromise(promise2, x, resolve, reject);
+</div><div class="hljs-line">        } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      })
+</div><div class="hljs-line">
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  } <span class="hljs-keyword">else</span> {
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> promise2 = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">resolve, reject</span>) </span>{
+</div><div class="hljs-line">      setTimeout(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+</div><div class="hljs-line">        <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">          <span class="hljs-keyword">let</span> x = onRejected(self.value);
+</div><div class="hljs-line">          resolvePromise(promise2, x, resolve, reject);
+</div><div class="hljs-line">        } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">          reject(e);
+</div><div class="hljs-line">        }
+</div><div class="hljs-line">      })
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">resolvePromise</span>(<span class="hljs-params">promise2, x, resolve, reject</span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span> (x === promise2) { <span class="hljs-comment">//2.3.1.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> reject(<span class="hljs-keyword">new</span> <span class="hljs-built_in">TypeError</span>(<span class="hljs-string">'禁止循环引用!'</span>));
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> called = <span class="hljs-literal">false</span>;
+</div><div class="hljs-line">
+</div><div class="hljs-line">  <span class="hljs-comment">//2.3.2.</span>
+</div><div class="hljs-line">  <span class="hljs-keyword">if</span> (x <span class="hljs-keyword">instanceof</span> <span class="hljs-built_in">Promise</span>) {
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span> (x.status === PENDING) { <span class="hljs-comment">//2.3.2.1</span>
+</div><div class="hljs-line">      x.then(<span class="hljs-function">(<span class="hljs-params">y</span>) =&gt;</span> {
+</div><div class="hljs-line">        resolvePromise(promise2, y, resolve, reject); <span class="hljs-comment">//因为此时的y，有可能也是一个promise //挂上一个钩子只要x状态转化为成功态就递归调用resolvePromise</span>
+</div><div class="hljs-line">      }, reject);
+</div><div class="hljs-line">    } <span class="hljs-keyword">else</span> { <span class="hljs-comment">//此分支存在的意义在于若executor调用resolve/reject不是异步的且不在resolve/reject中设置setTimeout，意味着当new的时候就会返回一个带状态的promise就会走这里。</span>
+</div><div class="hljs-line">      x.then(resolve, reject); <span class="hljs-comment">//2.3.2.2-2.3.2.3 //只要x状态改变，就以x的状态和值来改变promise2的状态和值 //这个值可能是一个promise，前提是在上面那种假设实现中 //如果不符合上面那种实现且不想像规范一样允许值可以为一个promise或则对象 可除去此分支</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (x != <span class="hljs-literal">null</span> &amp;&amp; ((<span class="hljs-keyword">typeof</span> x === <span class="hljs-string">'function'</span>) || (<span class="hljs-keyword">typeof</span> x === <span class="hljs-string">'object'</span>))) { <span class="hljs-comment">//2.3.3.</span>
+</div><div class="hljs-line">    <span class="hljs-keyword">try</span> {
+</div><div class="hljs-line">      <span class="hljs-keyword">let</span> then = x.then; <span class="hljs-comment">//2.3.3.1</span>
+</div><div class="hljs-line">
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span> (<span class="hljs-keyword">typeof</span> then === <span class="hljs-string">'function'</span>) {
+</div><div class="hljs-line">        <span class="hljs-comment">//2.3.3.3.</span>
+</div><div class="hljs-line">        then.call(x, (y) =&gt; {
+</div><div class="hljs-line">          <span class="hljs-keyword">if</span> (called) <span class="hljs-keyword">return</span>; <span class="hljs-comment">//2.3.3.3.3.</span>
+</div><div class="hljs-line">          called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">          resolvePromise(promise2, y, resolve, reject); <span class="hljs-comment">//在resolve中又包含promise的情况下，由于resolve中的 value.then存在，当前回调调用时，resolve中的promise状态一定已经改变，在状态已经改变的时候利用then绑定回调，会走then中的status==fulfilled或则rejected分支</span>
+</div><div class="hljs-line">        }, (reason) =&gt; {
+</div><div class="hljs-line">          <span class="hljs-keyword">if</span> (called) <span class="hljs-keyword">return</span>;
+</div><div class="hljs-line">          called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">          reject(reason);
+</div><div class="hljs-line">        });
+</div><div class="hljs-line">      } <span class="hljs-keyword">else</span> {
+</div><div class="hljs-line">        resolve(x); <span class="hljs-comment">//2.3.3.4. //1.3</span>
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    } <span class="hljs-keyword">catch</span> (e) {
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span> (called) <span class="hljs-keyword">return</span>; <span class="hljs-comment">//2.3.3.3.4.1.</span>
+</div><div class="hljs-line">      called = <span class="hljs-literal">true</span>;
+</div><div class="hljs-line">      reject(e); <span class="hljs-comment">//2.3.3.2. //2.3.3.3.4.2.</span>
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">
+</div><div class="hljs-line">  } <span class="hljs-keyword">else</span> { <span class="hljs-comment">//2.3.4.</span>
+</div><div class="hljs-line">    resolve(x);
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">}
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.deferred = <span class="hljs-built_in">Promise</span>.defer = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">let</span> defer = {};
+</div><div class="hljs-line">  defer.promise = <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">resolve, reject</span>) </span>{
+</div><div class="hljs-line">    defer.resolve = resolve;
+</div><div class="hljs-line">    defer.reject = reject;
+</div><div class="hljs-line">  });
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> defer;
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.prototype.catch = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">onRejected</span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">this</span>.then(<span class="hljs-literal">null</span>, onRejected)
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.resolve = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">value</span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve, reject</span>) =&gt;</span> {
+</div><div class="hljs-line">    resolve(value);
+</div><div class="hljs-line">  })
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.reject = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">reason</span>) </span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve, reject</span>) =&gt;</span> {
+</div><div class="hljs-line">    reject(reason);
+</div><div class="hljs-line">  })
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.all = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">promises</span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">let</span> result = [];
+</div><div class="hljs-line">    <span class="hljs-keyword">let</span> count = <span class="hljs-number">0</span>;
+</div><div class="hljs-line">    <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">done</span>(<span class="hljs-params">i,data</span>)</span>{
+</div><div class="hljs-line">      result[i] = data;
+</div><div class="hljs-line">      <span class="hljs-keyword">if</span>(++count === promises.length){
+</div><div class="hljs-line">        resolve(result);
+</div><div class="hljs-line">      }
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">    <span class="hljs-keyword">for</span>(<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>;i&lt;promises.length;++i){
+</div><div class="hljs-line">      promises[i].then(<span class="hljs-function">(<span class="hljs-params">value</span>)=&gt;</span>{
+</div><div class="hljs-line">        done(i,value);
+</div><div class="hljs-line">      },reject);
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  })
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.race = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">promises</span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">resolve,reject</span>)</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">for</span>(<span class="hljs-keyword">let</span> i=<span class="hljs-number">0</span>;i&lt;promises.length;++i){
+</div><div class="hljs-line">      promises[i].then(resolve,reject);
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  });
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.promisify = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">fn</span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">return</span> <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">...args</span>)</span>{
+</div><div class="hljs-line">    <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-built_in">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve,reject</span>)=&gt;</span>{
+</div><div class="hljs-line">      fn.apply(<span class="hljs-literal">null</span>,[...args,<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">err,data</span>)</span>{
+</div><div class="hljs-line">        err?reject(err):resolve(data);
+</div><div class="hljs-line">      }]);
+</div><div class="hljs-line">    });
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">};
+</div><div class="hljs-line">
+</div><div class="hljs-line"><span class="hljs-built_in">Promise</span>.promisifyALL = <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">obj</span>)</span>{
+</div><div class="hljs-line">  <span class="hljs-keyword">for</span>(<span class="hljs-keyword">var</span> key <span class="hljs-keyword">in</span> obj){
+</div><div class="hljs-line">    <span class="hljs-keyword">if</span>(obj.hasOwnProperty(key)&amp;&amp;<span class="hljs-keyword">typeof</span> obj[key]==<span class="hljs-string">'function'</span>){
+</div><div class="hljs-line">      obj[key+<span class="hljs-string">'Async'</span>] = <span class="hljs-built_in">Promise</span>.promisify(obj[key]);
+</div><div class="hljs-line">    }
+</div><div class="hljs-line">  }
+</div><div class="hljs-line">};
+</div><div class="hljs-line"><span class="hljs-built_in">module</span>.exports = <span class="hljs-built_in">Promise</span>;
+</div></code></pre></div></body></html>
